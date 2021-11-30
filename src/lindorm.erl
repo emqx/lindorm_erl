@@ -14,23 +14,41 @@
 %% limitations under the License.
 %%--------------------------------------------------------------------
 -module(lindorm).
+-include("lindorm.hrl").
 
 -export([ start/3
+        , write/2
+        , sync_write/2
+        , status/1
         , stop/1]).
 
--export([ write/2]).
+-export([ ts_write_message/4]).
 
-start(Name, PoolSize, LindormOptions) ->
+start(Client, PoolSize, LindormOptions) ->
     Opts = [
-          {pool_size, 10},
+          {pool_size, PoolSize},
           {pool_type, round_robin},
           {auto_reconnect, 3},
-          {lindorm, LindormOptions}
+          {lindorm, LindormOptions#{pool => Client}}
         ],
-    ecpool:start_pool(Name, lindorm_worker, Opts).
+    ecpool:start_pool(Client, lindorm_worker, Opts).
 
-stop(Name) ->
-    ecpool:stop_sup_pool(Name).
+status(Client) ->
+    ecpool:with_client(Client, fun(Worker) -> lindorm_worker:status(Worker) end).
 
-write(Name, Data) ->
-    ecpool:with_client(Name, fun(Worker) -> lindorm_worker:write(Worker, Data) end).
+stop(Client) ->
+    ecpool:stop_sup_pool(Client).
+
+write(Client, Data) ->
+    ecpool:with_client(Client, fun(Worker) -> lindorm_worker:write(Worker, Data) end).
+
+sync_write(Client, Data) ->
+    ecpool:with_client(Client, fun(Worker) -> lindorm_worker:sync_write(Worker, Data) end).
+
+ts_write_message(Table, Tags, Time, Fields) ->
+    #lindorm_ts_data{
+        table    = Table,
+        tags     = Tags,
+        time     = Time,
+        fields   = Fields
+    }.

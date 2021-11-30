@@ -18,7 +18,10 @@
 
 -include("lindorm.hrl").
 
--export([write/2]).
+-export([ write/2
+        , sync_write/2
+        , status/1
+        ]).
 
 -export([ start_link/1]).
 
@@ -27,14 +30,16 @@
         , handle_cast/2
         , handle_info/2
         , terminate/2
-        , code_change/3]).
+        , code_change/3
+        ]).
 
--export([connect/1]).
+-export([ connect/1]).
 
 -define(SERVER, ?MODULE).
 
 -record(state, {
     url                             :: binary()  | string(),
+    database                        :: binary(),
     authorization_basic             :: undefined | binary(),
     batch                           :: undefined | list(),
     batch_size                      :: integer(),
@@ -43,8 +48,14 @@
     batch_result_handler            :: fun() | undefined %% fun(ApiResponse, Batch)
 }).
 
+status(Pid) ->
+    gen_server:call(Pid, status).
+
 write(Pid, Data) ->
     gen_server:call(Pid, {write, Data}).
+
+sync_write(Pid, Data) ->
+    gen_server:call(Pid, {sync_write, Data}).
 
 connect(Opts) ->
     LindormOptions = proplists:get_value(lindorm, Opts),
@@ -53,43 +64,42 @@ connect(Opts) ->
 start_link(Opts) ->
     gen_server:start_link(?MODULE, Opts, []).
 
-init(Opts = #{<<"url">> := Url0, <<"pool">> := Pool, <<"database">> := DB}) ->
+init(Opts = #{url := Url0, pool := Pool, database := DB}) ->
     Url = <<Url0/binary, ?PATH, ?QUERY_DB, DB/binary>>,
-    BatchResultHandler = maps:get(<<"batch_result_handler">>, Opts, undefined),
-    case maps:get(<<"batch_size">>, Opts, undefined) of
+    BatchResultHandler = maps:get(batch_result_handler, Opts, undefined),
+    State = case maps:get(batch_size, Opts, undefined) of
         undefined ->
-            State = auth(Opts, #state{url = Url,
-                                      pool = Pool,
-                                      batch_size = ?DEFAULT_BATCH_SIZE,
-                                      batch = [],
-                                      batch_interval = ?DEFAULT_BATCH_INTERVAL,
-                                      batch_result_handler = BatchResultHandler}),
-            {ok, State};
+            #state{url = Url,
+                   database = DB,
+                   pool = Pool,
+                   batch_size = ?DEFAULT_BATCH_SIZE,
+                   batch = [],
+                   batch_interval = ?DEFAULT_BATCH_INTERVAL,
+                   batch_result_handler = BatchResultHandler};
         BatchSize ->
-            BatchInterval = maps:get(<<"batch_interval">>, Opts, ?DEFAULT_BATCH_INTERVAL),
-            State = auth(Opts, #state{url = Url,
-                                      pool = Pool,
-                                      batch_size = BatchSize,
-                                      batch = [],
-                                      batch_interval = BatchInterval,
-                                      batch_result_handler = BatchResultHandler}),
-            {ok, State}
-    end.
+            #state{url = Url,
+                   database = DB,
+                   pool = Pool,
+                   batch_size = BatchSize,
+                   batch = [],
+                   batch_interval = maps:get(batch_interval, Opts, ?DEFAULT_BATCH_INTERVAL),
+                   batch_result_handler = BatchResultHandler}
+    end,
+    {ok, auth(Opts, State)}.
 
 auth(Opts, State) ->
-    UserName = maps:get(<<"username">>, Opts, undefined),
-    PassWord = maps:get(<<"password">>, Opts, undefined),
+    UserName = maps:get(username, Opts, undefined),
+    PassWord = maps:get(password, Opts, undefined),
     case {UserName, PassWord} of
         {_, undefined} -> State;
         {undefined, _} -> State;
         {_, _} ->
             Base64 = base64:encode(<<UserName/binary, ":", PassWord/binary>>),
-            Auth = <<"Basic ", Base64>>,
+            Auth = <<"Basic ", Base64/binary>>,
             State#state{authorization_basic = Auth}
     end.
 
-
-handle_call({sync_write, Data}, _From, State = #state{batch = undefined}) ->
+handle_call({sync_write, Data}, _From, State) ->
     {reply, do_write(Data, State), State};
 
 handle_call({write, Data}, _From, State = #state{batch = Batch0,
@@ -104,14 +114,17 @@ handle_call({write, Data}, _From, State = #state{batch = Batch0,
             {reply, ok, State#state{batch = Batch}, Interval};
         {_, _} ->
             {reply, ok, State#state{batch = Batch}}
-    end.
+    end;
+
+handle_call(status, _From, State) ->
+    {reply, do_status(State), State}.
 
 append_batch(Data, Batch) when is_record(Data, lindorm_ts_data) ->
     lists:append(Batch, [Data]);
 append_batch(Data, Batch) when is_list(Data) ->
     lists:append(Batch, Data).
 
-handle_cast(_Request, State = #state{}) ->
+handle_cast(_Request, State) ->
     {noreply, State}.
 
 handle_info(timeout, State = #state{batch = Batch, batch_result_handler = undefined}) ->
@@ -122,31 +135,37 @@ handle_info(timeout, State = #state{batch = Batch, batch_result_handler = Handle
     Res = do_write(lists:reverse(Batch), State),
     Handler(Batch, Res),
     {noreply, State#state{batch = []}};
-handle_info(_Info, State = #state{}) ->
+handle_info(_Info, State) ->
     {noreply, State}.
 
-terminate(_Reason, _State = #state{}) ->
+terminate(_Reason, _State) ->
     ok.
 
-code_change(_OldVsn, State = #state{}, _Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
 
-do_write(Data, State = #state{url = Url, pool = Pool}) ->
-    SQL = lindorm_sql:trans(Data),
+do_status(State) ->
+    do_request(<<"SELECT true = true">>, State).
+
+do_write(Data, State) ->
+    do_request(lindorm_sql:trans(Data), State).
+
+do_request(SQL, State = #state{url = Url, pool = Pool}) ->
     Headers = headers(State),
     Options = [{pool, Pool},
-                {connect_timeout, 10000},
-                {recv_timeout, 30000},
-                {follow_redirectm, true},
-                {max_redirect, 5},
-                with_body],
-    case hackney:request(post, Url, Headers, SQL, Options) of
+               {connect_timeout, 10000},
+               {recv_timeout, 30000},
+               {follow_redirectm, true},
+               {max_redirect, 5},
+               with_body],
+    case hackney:request(post, <<Url/binary>>, Headers, SQL, Options) of
         {ok, StatusCode, _Headers, ResponseBody}
-        when StatusCode =:= 200 orelse StatusCode =:= 204 ->
+                when StatusCode =:= 200
+                orelse StatusCode =:= 204 ->
             {ok, ResponseBody};
         {ok, StatusCode, _Headers, ResponseBody} ->
             {error, {StatusCode, ResponseBody}};

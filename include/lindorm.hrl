@@ -10,7 +10,7 @@
     {
         table       :: binary(),
         time        :: integer() | undefined,
-        tags        :: list() | undefined,
-        fields      :: list()
+        tags        :: list() | map() | undefined,
+        fields      :: list() |  map()
     }
 ).
