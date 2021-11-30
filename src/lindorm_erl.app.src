@@ -1,0 +1,20 @@
+{application, lindorm_erl,
+ [{description, "An OTP application"},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {mod, {lindorm_erl_app, []}},
+  {applications,
+   [kernel,
+    stdlib,
+    crypto,
+    public_key,
+    ssl,
+    hackney,
+    ecpool
+   ]},
+  {env,[]},
+  {modules, []},
+
+  {licenses, ["Apache 2.0"]},
+  {links, []}
+ ]}.
