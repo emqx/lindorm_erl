@@ -44,7 +44,7 @@ init(Name, Options = #{database := DB, url := Url, pool_size := PoolSize}) ->
 status(Client = #lindorm_client{database = DB}) ->
     case exec_sql(Client, <<"SHOW DATABASES">>) of
         {ok, Res} ->
-            DataBases = maps:get(<<"rows">>, jsx:decode(Res), []),
+            DataBases = maps:get(<<"rows">>, jsx:decode(Res,[return_maps]), []),
             case lists:member([DB], DataBases) of
                 true ->
                     {ok, Res};
