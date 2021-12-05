@@ -16,34 +16,25 @@
 -module(lindorm).
 -include("lindorm.hrl").
 
--export([ start/3
-        , write/2
-        , sync_write/2
+-export([ start/2
         , status/1
-        , stop/1]).
+        , write/2
+        , stop/1
+        ]).
 
 -export([ ts_write_message/4]).
 
-start(Client, PoolSize, LindormOptions) ->
-    Opts = [
-          {pool_size, PoolSize},
-          {pool_type, round_robin},
-          {auto_reconnect, 3},
-          {lindorm, LindormOptions#{pool => Client}}
-        ],
-    ecpool:start_pool(Client, lindorm_worker, Opts).
+start(Name, Options) ->
+    lindorm_client:init(Name, Options).
 
 status(Client) ->
-    ecpool:with_client(Client, fun(Worker) -> lindorm_worker:status(Worker) end).
-
-stop(Client) ->
-    ecpool:stop_sup_pool(Client).
+    lindorm_client:status(Client).
 
 write(Client, Data) ->
-    ecpool:with_client(Client, fun(Worker) -> lindorm_worker:write(Worker, Data) end).
+    lindorm_client:write(Client, Data).
 
-sync_write(Client, Data) ->
-    ecpool:with_client(Client, fun(Worker) -> lindorm_worker:sync_write(Worker, Data) end).
+stop(Client) ->
+    lindorm_client:stop(Client).
 
 ts_write_message(Table, Tags, Time, Fields) ->
     #lindorm_ts_data{

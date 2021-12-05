@@ -46,18 +46,14 @@ start() ->
     LindormOptions = #{
         database => <<"DemoDB1">>,
         url => <<"http://ld-wz92i1mj8t4yd17a0-proxy-tsdb-pub.lindorm.rds.aliyuncs.com:8242">>,
-        batch_result_handler => fun handler/2,
+        pool_size => 4,
         username => <<"root">>,
         password => <<"root">>
     },
-    Client = demo_pool,
-    lindorm:start(Client, 4, LindormOptions),
+    Name = demo_pool,
+    {ok, Client} = lindorm:start(Name, LindormOptions),
     IsAlive = lindorm:status(Client),
     io:format("is alive ~p", [IsAlive]),
     Res = lindorm:write(Client, [Data, Data2]),
     io:format("~n~p ~n", [Res]),
     ok.
-
-handler(A, B) ->
-    io:format("~p ~p ~n", [A,B]).
-
