@@ -148,8 +148,19 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-do_status(State) ->
-    do_request(<<"SELECT true = true">>, State).
+do_status(State = #state{database = DB}) ->
+    case do_request(<<"SHOW DATABASES">>, State) of
+        {ok, Res} ->
+            DataBases = maps:get(<<"rows">>, jsx:decode(Res), []),
+            case lists:member([DB], DataBases) of
+                true ->
+                    {ok, Res};
+                false ->
+                    {error, {database_not_found, DB, DataBases}}
+            end;
+        Error ->
+            Error
+    end.
 
 do_write(Data, State) ->
     do_request(lindorm_sql:trans(Data), State).
@@ -162,7 +173,7 @@ do_request(SQL, State = #state{url = Url, pool = Pool}) ->
                {follow_redirectm, true},
                {max_redirect, 5},
                with_body],
-    case hackney:request(post, <<Url/binary>>, Headers, SQL, Options) of
+    case hackney:request(post, Url, Headers, SQL, Options) of
         {ok, StatusCode, _Headers, ResponseBody}
                 when StatusCode =:= 200
                 orelse StatusCode =:= 204 ->

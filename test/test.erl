@@ -45,8 +45,10 @@ start() ->
     io:format(" ~nencode ~0p~n", [Encode]),
     LindormOptions = #{
         database => <<"DemoDB1">>,
-        url => <<"http://ld-wz9sl78v91h5whm71-proxy-tsdb-pub.lindorm.rds.aliyuncs.com:8242">>,
-        batch_result_handler => fun handler/2
+        url => <<"http://ld-wz92i1mj8t4yd17a0-proxy-tsdb-pub.lindorm.rds.aliyuncs.com:8242">>,
+        batch_result_handler => fun handler/2,
+        username => <<"root">>,
+        password => <<"root">>
     },
     Client = demo_pool,
     lindorm:start(Client, 4, LindormOptions),
