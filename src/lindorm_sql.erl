@@ -102,6 +102,7 @@ append_binary(Values) when is_list(Values) ->
 append_value(Value, <<>>) -> Value;
 append_value(Value, Data) -> <<Data/binary, ",", Value/binary>>.
 
+to_binary(undefined)            -> <<"null">>;
 to_binary(true)                 -> <<"true">>;
 to_binary(false)                -> <<"false">>;
 to_binary(D) when is_binary(D)  -> <<"\'", D/binary, "\'">>;
